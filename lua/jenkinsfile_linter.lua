@@ -11,18 +11,6 @@ local validated_msg = "Jenkinsfile successfully validated."
 local unauthorized_msg = "ERROR 401 Unauthorized"
 local not_found_msg = "ERROR 404 Not Found"
 
-local function get_crumb_job()
-  return Job:new({
-    command = "curl",
-    args = {
-      insecure,
-      "--user",
-      user .. ":" .. (token or password),
-      jenkins_url .. "/crumbIssuer/api/json",
-    },
-  })
-end
-
 local function urlencode(text)
   text = text:gsub("([^A-Za-z0-9%-_.!~*'()])", function(c)
     return string.format("%%%02X", string.byte(c))
@@ -31,13 +19,6 @@ local function urlencode(text)
 end
 
 local validate_job = vim.schedule_wrap(function(crumb_job)
-  local concatenated_crumbs = table.concat(crumb_job._stdout_results, " ")
-  if string.find(concatenated_crumbs, unauthorized_msg) then
-    log.error("Unable to authorize to get breadcrumb. Please check your creds")
-  elseif string.find(concatenated_crumbs, not_found_msg) then
-    log.error("Unable to hit your crumb provider. Please check your host")
-  else
-    local args = vim.fn.json_decode(concatenated_crumbs)
     local buf_contents = vim.api.nvim_buf_get_lines(0, 0, -1, false)
 
     return Job:new({
@@ -48,8 +29,6 @@ local validate_job = vim.schedule_wrap(function(crumb_job)
         user .. ":" .. (token or password),
         "-X",
         "POST",
-        "-H",
-        "Jenkins-Crumb:" .. args.crumb,
         "-d",
         "jenkinsfile=" .. urlencode(table.concat(buf_contents, "\n")),
         jenkins_url .. "/pipeline-model-converter/validate",
@@ -96,7 +75,6 @@ local validate_job = vim.schedule_wrap(function(crumb_job)
         end
       end),
     }):start()
-  end
 end)
 
 local function check_creds()
@@ -114,7 +92,7 @@ end
 local function validate()
   local ok, msg = check_creds()
   if ok then
-    get_crumb_job():after(validate_job):start()
+    validate_job()
   else
     vim.notify(msg, vim.log.levels.ERROR)
   end
